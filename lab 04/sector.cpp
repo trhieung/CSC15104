@@ -59,11 +59,11 @@ public:
         return std::move(s);
     }
 
-    static void ReadSetor(PCHAR lpBuffer, const unsigned int sectorNumber = 0) {
+    static void ReadSetor(const char* volumeName, PCHAR lpBuffer, const unsigned int sectorNumber = 0) {
         HANDLE diskHandle;
 
-        // Open the disk device for reading
-        diskHandle = CreateFileA("\\\\.\\PhysicalDrive0", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+        // Open the disk device for reading "\\\\.\\C:" or "\\\\.\\PhysicalDrive0"
+        diskHandle = CreateFileA(volumeName, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
 
         if (diskHandle == INVALID_HANDLE_VALUE) {
             std::cerr << "Unable to open the disk" << std::endl;
@@ -145,11 +145,12 @@ public:
 };
 
 int main() {
-    int sectorNumber = 1; // Sector number to read
+    int sectorNumber = 0; // Sector number to read - 0 is boot sector
+    const char* volumeName = "\\\\.\\C:";
     char buffer[SECTOR_SIZE];
 
     // Reading sector
-    Sector::ReadSetor(buffer, sectorNumber);
+    Sector::ReadSetor(volumeName, buffer, sectorNumber);
     Sector::WriteMBRToFile(buffer);
     // Sector::PrintSectorContent(buffer, sectorNumber);
 
