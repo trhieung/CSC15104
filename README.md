@@ -1,7 +1,7 @@
 # CSC15104
 ## Description
 
-This project, identified by CSC15104 - fit - HCMUS, is created by fit student. It aims to help us pass the course ._.
+This project, identified by CSC15104 - fit - HCMUS, is created by fit students. It aims to help us pass the course ._.
 
 ## Student Information
 
