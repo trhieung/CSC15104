@@ -33,7 +33,7 @@ void Sector::readSector(const string& filename, const unsigned int& secnum, char
         return;
     }
 
-    filein.seekg(this->index-1, std::ios::beg);
+    filein.seekg(this->index, std::ios::beg);
     filein.read(out, SECTOR_SIZE);
 
     filein.close();

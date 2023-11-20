@@ -4,6 +4,7 @@ CustomVolume::CustomVolume(const string& vol_name, unsigned int vol_size, const 
     : Sector(sector_size), sector_size(sector_size), size(vol_size), cluster_sz(8) {
     this->n_sectors = this->size/this->sector_size;
     this->n_clusters = (size - (RDET_size+1)*sector_size)/(4+cluster_sz*sector_size) + 1;
+    this->cluster_size_byte = cluster_sz*SECTOR_SIZE;
     this->Fat_size = (this->n_clusters << 2)/this->sector_sz; // n_cluster = 4 bytes
     this->sector_fat_begin = 1; // mbr 1 sector
     this->sector_RDET_begin = 1 + n_FAT*this->Fat_size;
@@ -61,11 +62,11 @@ void CustomVolume::writeCluster(const string& filename, const unsigned int& clun
 
     unsigned int sector_num = this->sector_data_begin + cluster_sz*(clunum - 2);
     for(int i = 0; i < this->cluster_sz; ++i){
-        this->writeSector(filename, sector_num+i, &val[i*256]);
+        this->writeSector(filename, sector_num+i, &val[i*this->sector_size]);
     }
 }
 
-void CustomVolume::readCluster(const string& filename, const unsigned int& clunum, char* out){
+void CustomVolume::readCluster(const string& volname, const unsigned int& clunum, char* out){
     if (clunum < 2 || clunum > this->n_clusters){
         cerr << "not valid input cluster number" << endl;
         return;
@@ -73,7 +74,40 @@ void CustomVolume::readCluster(const string& filename, const unsigned int& clunu
 
     unsigned int sector_num = this->sector_data_begin + cluster_sz*(clunum - 2);
     for(int i = 0; i < this->cluster_sz; i++){
-        this->readSector(filename, sector_num+i, &out[i*256]);
+        this->readSector(volname, sector_num+i, &out[i*this->sector_size]);
+    }
+}
+
+void CustomVolume::check_volpwd(const string& volname, const string& pwd){
+    if(this->openVolume(volname, pwd)){
+        cerr << "password of volume is correct" << endl;
+    }
+    else{
+        cerr << "password of volume is not correct" << endl;
+    }
+}
+
+void CustomVolume::update_volpwd(const string& volname) {
+    fstream file(volname, ios::binary | ios::in | ios::out);
+    
+    if (!file.is_open()) {
+        cerr << "Error opening file: " << volname << endl;
+        return;
+    }
+
+    file.seekp(69, ios::beg);
+    file.write(&this->volume_pwd_hash[0], 16);
+    file.close();
+}
+
+void CustomVolume::change_volpwd(const string& volname, const string& old_pwd, const string& new_pwd){
+    if(this->openVolume(volname, old_pwd)){
+        this->ComputeMD5(new_pwd, this->volume_pwd_hash);
+        this->update_volpwd(volname);
+        cerr << "change volume password successfully!" << endl;
+    }
+    else{
+        cerr << "old password not correct for changing!" << endl;
     }
 }
 
@@ -276,6 +310,100 @@ void CustomVolume::set_cluster_value(const string& volname, const unsigned int& 
     file.close();
 }
 
+bool CustomVolume::find_first_empty_entry(const string& volname, unsigned int& entry_index){
+    this->readRDET(volname);
+    
+    for(unsigned int i = 0; i < this->n_entry_in_RDET; ++i){
+        if (this->rdet[i][0] == (int8_t)0x00 || this->rdet[i][0] == (int8_t)0xE5){
+            entry_index = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+void CustomVolume::update_rdet(const string& volname){
+    fstream file(volname, ios::binary | ios::in | ios::out);
+    
+    if (!file.is_open()) {
+        cerr << "Error opening file: " << volname << endl;
+        return;
+    }
+
+    file.seekp(this->sector_RDET_begin * 512, ios::beg);
+
+    for(unsigned i = 0; i < this->n_entry_in_RDET; i++){
+        file.write(rdet[i], this->entry_size);
+    }
+
+    // Close the file
+    file.close();
+}
+
+void CustomVolume::update_fat(const string& volname){
+    fstream file(volname, ios::binary | ios::in | ios::out);
+    
+    if (!file.is_open()) {
+        cerr << "Error opening file: " << volname << endl;
+        return;
+    }
+
+    file.seekp(this->sector_fat_begin * 512, ios::beg);
+
+    for(unsigned i = 0; i < this->n_clusters; i++){
+        file.write(reinterpret_cast<const char*>(&f[i]), sizeof(unsigned int));
+    }
+
+    // Close the file
+    file.close();
+}
+
+void CustomVolume::writeEntry(const string& volname, char entry[32]){
+    unsigned int entry_index = 0;
+
+    if(!this->find_first_empty_entry(volname, entry_index)){
+        cerr << "don't have entry available" << endl;
+    }
+
+    memcpy(rdet[entry_index], entry, this->entry_size);
+    this->update_rdet(volname);
+}
+
+bool CustomVolume::get_entry_with_filename(const string& volname, const string& filename, unsigned int& index_rdet){
+    this->readRDET(volname);
+
+    // Set name
+    char name[11];
+    size_t len = min(filename.size(), static_cast<size_t>(10));
+    strncpy(name, filename.c_str(), len);
+    name[len] = '\0';
+
+    for(unsigned int i = 0; i < this->n_entry_in_RDET; ++i){
+        if(memcmp(name, rdet[i], 11) == 0){
+            index_rdet = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+void CustomVolume::listFile(const string& volname){
+    this->readRDET(volname);
+    vector<unsigned int> rdet_idx;
+    char filename[32];
+
+    for (unsigned int i = 0; i < n_entry_in_RDET; ++i){
+        if(!this->is_empty(rdet[i]))
+            rdet_idx.push_back(i);
+    }
+
+    for(auto idx = rdet_idx.begin(); idx != rdet_idx.end(); ++idx){
+        memcpy(&filename, rdet[*idx], 32);
+        cerr << "file: " << filename << endl;
+        memset(&filename, 0x00, 32);
+    }
+}
+
 void CustomVolume::importFile(const string& volname, const string& volpwd, 
                             const string& path_des_file, const string& path_src_file, 
                             const bool is_folder, const string os){
@@ -285,17 +413,35 @@ void CustomVolume::importFile(const string& volname, const string& volpwd,
             return;
         }
 
-        unsigned int n_cluster_need = ceil(static_cast<double>(file_sz) / (this->cluster_sz * this->sector_size));
+        unsigned int n_cluster_need = ceil(static_cast<double>(file_sz) / this->cluster_size_byte);
         vector<unsigned int> clusters = this->find_n_empty_cluster(volname, n_cluster_need);
-        if(clusters.size() == 0) return;
+        if(clusters.size() == 0){
+            cerr << "don't have enough cluster" << endl;
+            return;
+        }
+        clusters.push_back(0x0FFFFFFF);
+
+        char* entry = new char[32];
+        char* cluster_data = new char[this->cluster_size_byte];
 
         ENTRY temp_entry(path_des_file, 'A', clusters[0], file_sz);
-        char* entry = new char[32];
         temp_entry.get_entry(entry);
 
+        this->writeEntry(volname, entry);
 
+        for(unsigned int i = 0; i < clusters.size() - 1; i++){
+            this->getFileData(path_src_file, file_sz, i, cluster_data);
+            this->writeCluster(volname, clusters[i], cluster_data);
+            this->set_cluster_value(volname, clusters[i], clusters[i+1]);
+            file_sz -= this->cluster_size_byte;
+            memset(cluster_data, 0x00, this->cluster_size_byte);
+        }
 
         delete[] entry;
+        delete[] cluster_data;
+    }
+    else{
+        cerr << "password of volume is not correct" << endl;
     }
 }
 
@@ -303,7 +449,78 @@ void CustomVolume::exportFile(const string& volname, const string& volpwd,
                             const string& path_des_file, const string& path_src_file, 
                             const bool is_folder, const string os){
     if(this->openVolume(volname, volpwd)){
-        
+        unsigned int entry_index = 0;
+        if(this->get_entry_with_filename(volname, path_src_file, entry_index)){
+            unsigned int begin_cluster = 0;
+            unsigned int file_size = 0;
+
+            memcpy(&begin_cluster, rdet[entry_index] + 24, sizeof(begin_cluster));
+            memcpy(&file_size, rdet[entry_index] + 28, sizeof(file_size));
+
+            char* cluster_data = new char[this->cluster_size_byte];
+
+            vector<unsigned int> clusters;
+            unsigned int n_cluster_need = ceil(static_cast<double>(file_size) / this->cluster_size_byte);
+
+            this->readFAT(volname);
+            do{
+                clusters.push_back(begin_cluster);
+                begin_cluster = f[begin_cluster];
+            } while(begin_cluster != this->my_pair[0].second);
+
+            for(unsigned int i = 0; i < clusters.size(); i++){
+                this->readCluster(volname, clusters[i], cluster_data);
+                this->outFileData(path_des_file, file_size, i, cluster_data);
+
+                file_size -= this->cluster_size_byte;
+                memset(cluster_data, 0x00, this->cluster_size_byte);
+            }
+            delete[] cluster_data;
+        }
+        else{
+            cerr << "Don't have file in volume" << endl;
+        }
+    }
+    else{
+        cerr << "password of volume is not correct" << endl;
+    }
+}
+
+void CustomVolume::deleteFile(const string& volname, const string& volpwd, 
+                    const string& filename,
+                    const bool is_folder, const string os){
+    if(this->openVolume(volname, volpwd)){
+        unsigned int entry_index = 0;
+        if(this->get_entry_with_filename(volname, filename, entry_index)){
+            unsigned int begin_cluster = 0;
+            unsigned int file_size = 0;
+
+            memcpy(&begin_cluster, rdet[entry_index] + 24, sizeof(begin_cluster));
+            memcpy(&file_size, rdet[entry_index] + 28, sizeof(file_size));
+
+            vector<unsigned int> clusters;
+            unsigned int n_cluster_need = ceil(static_cast<double>(file_size) / this->cluster_size_byte);
+
+            this->readFAT(volname);
+            do{
+                clusters.push_back(begin_cluster);
+                begin_cluster = f[begin_cluster];
+            } while(begin_cluster != this->my_pair[0].second);
+
+            for(auto idx = clusters.begin(); idx != clusters.end(); ++idx){
+                f[*idx] = 0x00000000;
+            }
+            this->update_fat(volname);
+
+            rdet[entry_index][0] = 0xE5;
+            this->update_rdet(volname);
+        }
+        else{
+            cerr << "Don't have file in volume" << endl;
+        }
+    }
+    else{
+        cerr << "password of volume is not correct" << endl;
     }
 }
 
@@ -325,4 +542,78 @@ unsigned int CustomVolume::get_sizeof_file(const string& path_to_file){
         return 0;
     }
     return 0;
+}
+
+void CustomVolume::getFileData(const string& filename, const unsigned int& file_size, const unsigned int& cluster_index, char* output){
+    const unsigned int temp_size = min(file_size, this->cluster_size_byte);
+    ifstream file(filename, ios::binary);
+
+    if (!file.is_open()) {
+        cerr << "Error opening file: " << filename << endl;
+        return;
+    }
+
+    file.seekg(cluster_index * this->cluster_size_byte);
+    file.read(output, temp_size);
+
+    // Close the file
+    file.close();
+}
+
+void CustomVolume::outFileData(const string& filename, const unsigned int& file_size, const unsigned int& cluster_index, char* value){
+    const unsigned int temp_size = min(file_size, this->cluster_size_byte);
+    // Check if the file exists
+    ifstream fileCheck(filename);
+    if (!fileCheck) {
+        // File doesn't exist, so create it
+        ofstream createFile(filename);
+        if (!createFile) {
+            cerr << "Error creating file: " << filename << endl;
+            return;
+        }
+        createFile.close();
+    }
+
+    // Now open the file for reading and writing
+    fstream file(filename, ios::binary | ios::in | ios::out);
+
+    if (!file.is_open()) {
+        cerr << "Error opening file: " << filename << endl;
+        return;
+    }
+
+    file.seekg(cluster_index * this->cluster_size_byte);
+    file.write(value, temp_size);
+
+    // Close the file
+    file.close();
+}
+
+void CustomVolume::create_txt_file(const string& filename, unsigned int bytes, bool random, const char& fixed_byte){
+    std::ofstream file(filename, std::ios::out | std::ios::binary);
+
+    if (!file.is_open()) {
+        std::cerr << "Error: Unable to open file " << filename << std::endl;
+        return;
+    }
+
+    std::random_device rd;
+    std::default_random_engine engine(rd());
+    std::uniform_int_distribution<int> distribution(32, 126);
+
+    if (random) {
+        // Write random bytes to the file
+        for (unsigned int i = 0; i < bytes; ++i) {
+            char random_byte = static_cast<char>(distribution(engine));
+            file.write(&random_byte, 1);
+        }
+    } else {
+        // Write the fixed byte to the file
+        for (unsigned int i = 0; i < bytes; ++i) {
+            file.write(&fixed_byte, 1);
+        }
+    }
+
+    file.close();
+    std::cout << "File " << filename << " created successfully." << std::endl;
 }

@@ -9,6 +9,7 @@
 #include <Wincrypt.h>
 #include <filesystem>
 #include <cmath>
+#include <random>
 
 #define ENTRY_SIZE 32
 
@@ -21,6 +22,7 @@ private:
 
     char empty[12]; // not use - 12-23
 
+    
     unsigned int begin_cluster; // 24-27
     unsigned int file_size; //bytes - 28-31
 
@@ -38,4 +40,10 @@ public:
     void set_state(const char& state);
     char get_state(const char& state);
 
+    void set_pwd(const string& file_pwd);
+    void get_pwd(char* pwd);
+    void change_pwd(char* old_pwd, char* new_pwd);
+
+    bool is_empty();
+    bool is_empty(char* entry);
 };

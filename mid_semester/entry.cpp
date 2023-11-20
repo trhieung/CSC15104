@@ -46,3 +46,15 @@ void ENTRY::set_state(const char& state){
 char ENTRY::get_state(const char& state){
     return this->state;
 }
+
+bool ENTRY::is_empty(){
+    if (this->name[0] == (int8_t)0xE5  || this->name[0] == 0x00)
+        return true;
+    return false;
+}
+
+bool ENTRY::is_empty(char* entry){
+    if (entry[0] == (int8_t)0xE5 || entry[0] == 0x00)
+        return true;
+    return false;
+}
