@@ -1,0 +1,103 @@
+Globle sector_size = 512 bytes
+Globle cluster_size = 8 sectors
+Globle n_sectors_for_file_infor = 3
+Globle n_sectors_for_combine_file_infor = 3
+Globle vector<pair<string, unsigned int>> my_pair = {{ "end_of_file", 0x0FFFFFFF }, {"unallocated", 0x00000000}, {"ereased", 0x00000001}};
+
+Struct size
+|-unsigned int: bytes
+|-unsigned int: sector
+|-unsigned int: clusters
+
+Struct size_state_for_sector
+|-unsigned int: total
+|-unsigned int: empty_left        // unallocated
+|-unsigned int: real_empty_left   // unallocated + ereased
+|-unsigned int: first_real_empty
+
+struct student, gv
+|-mssv
+|-name
+|-birth_date
+|-join_date
+|-phone
+|-id_card
+
+Class fileTemplate:
+|
+|-Private:
+|	|-String: Name
+|	|-unsigned int: size (byte, sector, cluster)
+|	|-bool: state (0 – truy cập ít, 1 – truy cập nhiều)
+|
+|	|-char[sector_size * n_sectors_for_file_infor]: template_infor
+|	|-char[sector_size]: file_infor_0: file_infor
+|	|-char[sector_size]: file_infor_1: file_secure
+|	|-char[sector_size]: file_infor_2: data_infor
+|
+|	|-Bool: template_infor_create
+|	|-Bool: file_1_create
+|	|-Bool: file_2_create
+|	|-Bool: create
+|
+|-Public: 
+|	|-Bool: read
+|	|-Bool: write
+|	|-Bool: edit
+
+Class fileCombine: fileTemplate:
+|
+|-Private:
+|	|-String: Name
+|	|-size: _size
+|	|-bool: sate (true:equal, false: not_equal)
+|	|-<unsigned short, unsigned short>: percentage 
+| 			(true:equal:<1:1>, false: not_equal:<7:1>)
+|
+|	|-char[sector_size * n_sectors_for_file_infor]: combine_infor
+|	|-char[sector_size]: file_infor_0: file_infor
+|	|-char[sector_size]: file_infor_1: file_1
+|	|-char[sector_size]: file_infor_2: file_2
+|
+|	|-Bool: FAT_create
+|	|-Bool: file_infor_create
+|	|-Bool: file_1_create
+|	|-Bool: file_2_create
+|	|-Bool: create
+|
+|	|-Bool: get_access(file_name, pwd)
+|
+|-Public:
+|
+|	|-Bool: read(file_name, data)
+|	|-Bool: write(file_name, data)
+|	|-Bool: edit(file_name, data)
+
+
+
+
+file_combine = file1 + file2
+f = metatdata file_combine // 1 cluster
+f1 = metadata file1 // 1 cluster
+f2 = metadata file2 // 1 cluster
+
+cluster_size * 3 + content + 
+
+
+
+F = F1 + F2
+structure
+f + f1 + f2 + FAT + content
+
+---- sectors ----
+size = [2 sectors] + [3 sectors] + [3 sectors] + 2*[FAT size] + [content sectors]
+2*FAT_size = content_sector/cluster_size * 4 / sector_size (sectors)
+size = [8 sectors] + [content_sector] * (1/cluster_size * 4 / sector_size + 1)/2
+-> content_sector = (size - 8) / (1/cluster_size * 4 / sector_size + 1)*2
+
+----
+final_lab
+|-global.h
+|-fileTemplate.h
+|-fileCombine.h
+|-main.cpp
